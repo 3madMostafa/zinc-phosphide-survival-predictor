@@ -1,6 +1,6 @@
 # Survival Prediction App
 
-This is a [Streamlit]([https://zinc-phosphide-survival-predictor-yggducdjmzss8dkvnzsahs.streamlit.app/]) web application for predicting **survival (1 = Survived, 0 = Died)** after exposure to zinc phosphide or similar toxic agents.  
+This is a [Streamlit](https://zinc-phosphide-survival-predictor-yggducdjmzss8dkvnzsahs.streamlit.app/) web application for predicting **survival (1 = Survived, 0 = Died)** after exposure to zinc phosphide or similar toxic agents.  
 It uses a trained Random Forest model based on experimental data.
 
 ## Features
