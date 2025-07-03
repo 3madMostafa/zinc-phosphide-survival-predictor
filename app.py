@@ -2,95 +2,59 @@ import streamlit as st
 import pandas as pd
 import pickle
 
-# Load the pretrained model
+# Load the pretrained Random Forest model
 with open("model.pkl", "rb") as f:
     model = pickle.load(f)
 
 st.title("Survival Prediction App")
 st.write(
-    "This application predicts survival (1 = Survived, 0 = Died) after exposure to zinc phosphide or similar toxins."
+    "Provide subject data manually or upload an Excel/CSV file containing all required features to predict survival (1 = Survived, 0 = Died)."
 )
 
-# Choose input method
-ingest_method = st.radio("Select input method:", ("Manual Entry", "Upload Data File"))
+# Retrieve feature names expected by the model
+feature_names = model.feature_names_in_
 
-if ingest_method == "Manual Entry":
-    st.header("Manual Data Entry")
-    # Define all required input features with clear labels and mappings
-    age = st.number_input("Age (years)", min_value=0)
-    sex = st.selectbox(
-        "Sex (1 = Male, 2 = Female)",
-        [1, 2]
-    )
-    time_since_exposure = st.selectbox(
-        "Time since exposure (1 = 0.5–1h, 2 = 1–3h, 3 = >3h)",
-        [1, 2, 3]
-    )
-    package_condition = st.selectbox(
-        "Package condition (1 = Newly opened, 2 = Exposed to moisture)",
-        [1, 2]
-    )
-    exposure_route = st.selectbox(
-        "Exposure route (1 = Direct ingestion, 2 = Dissolved in water, 3 = On food)",
-        [1, 2, 3]
-    )
-    dose_taken = st.number_input(
-        "Dose taken (in sachets)",
-        min_value=0.0,
-        step=0.1
-    )
-    ne_given = st.selectbox(
-        "Norepinephrine given? (0 = No, 1 = Yes)",
-        [0, 1]
-    )
-    nacl_given = st.selectbox(
-        "Sodium bicarbonate given? (0 = No, 1 = Yes)",
-        [0, 1]
-    )
-    # Collect inputs into a DataFrame
-    input_dict = {
-        "Age (in years)": age,
-        "Sex (1=Male, 2=Female)": sex,
-        "Time since exposure (1=0.5-1h,2=1-3h,3=>3h)": time_since_exposure,
-        "Package condition (1=Newly opened,2=Exposed to moisture)": package_condition,
-        "Exposure route (1=Direct,2=In water,3=On food)": exposure_route,
-        "Dose taken (sachets)": dose_taken,
-        "NE_given (Norepinephrine)": ne_given,
-        "NaHCO3_given (Sodium Bicarbonate)": nacl_given
-    }
-    input_df = pd.DataFrame([input_dict])
+# Select input method
+input_method = st.radio("Choose input method:", ["Upload file", "Manual entry"])
 
-    if st.button("Run Prediction"):
-        prediction = model.predict(input_df)[0]
-        if prediction == 1:
-            st.success("Prediction: Survived (1)")
-        else:
-            st.error("Prediction: Died (0)")
-
-else:
-    st.header("Upload Data File")
-    uploaded = st.file_uploader(
-        "Upload an Excel (.xlsx) or CSV file with all required columns", 
+if input_method == "Upload file":
+    uploaded_file = st.file_uploader(
+        "Upload an Excel (.xlsx) or CSV file with columns matching the model features:",
         type=["xlsx", "csv"]
     )
-    if uploaded is not None:
-        # Read the uploaded file
-        if uploaded.name.lower().endswith(".csv"):
-            data = pd.read_csv(uploaded)
+    if uploaded_file:
+        # Read the uploaded data
+        if uploaded_file.name.lower().endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
         else:
-            data = pd.read_excel(uploaded)
-        st.write("Input data preview:")
-        st.dataframe(data)
+            df = pd.read_excel(uploaded_file)
+
+        st.subheader("Input Data Preview")
+        st.dataframe(df)
 
         if st.button("Run Batch Prediction"):
-            # Ensure the dataframe has the correct columns
             try:
-                preds = model.predict(data)
-                data["Prediction"] = preds
-                st.write("Prediction results:")
-                st.dataframe(data)
+                # Prepare input data
+                df_proc = df.copy()
+                # Encode interpret columns: low, normal, high
+                for col in df_proc.columns:
+                    if df_proc[col].dtype == object:
+                        df_proc[col] = df_proc[col].str.strip().str.lower()
+                        if set(df_proc[col].dropna().unique()) <= {"low", "normal", "high"}:
+                            mapping = {"high": 0, "low": 1, "normal": 2}
+                            df_proc[col] = df_proc[col].map(mapping)
+                # Fill missing values
+                df_proc = df_proc.fillna(-999)
 
-                csv = data.to_csv(index=False).encode('utf-8')
+                # Predict
+                preds = model.predict(df_proc[feature_names])
+                df["Prediction"] = preds
+
+                st.subheader("Prediction Results")
+                st.dataframe(df)
+
+                # Allow download
+                csv = df.to_csv(index=False).encode("utf-8")
                 st.download_button(
                     label="Download predictions as CSV",
                     data=csv,
@@ -98,4 +62,44 @@ else:
                     mime="text/csv"
                 )
             except Exception as e:
-                st.error(f"Prediction failed: {e}")
+                st.error(f"Batch prediction failed: {e}")
+
+else:
+    st.subheader("Manual Data Entry")
+    input_data = {}
+    # Generate an input widget for each feature
+    for feature in feature_names:
+        label = feature
+        if "(1=" in feature or "(1=" in feature:
+            # Feature includes mapping info in its name
+            input_data[feature] = st.selectbox(
+                label,
+                [0, 1, 2] if "interpret" in feature or "ratio" in feature.lower() else [0, 1]
+            )
+        elif "interpret" in feature:
+            input_data[feature] = st.selectbox(
+                f"{label} (low, normal, high)",
+                ["low", "normal", "high"]
+            )
+        else:
+            # Numeric input
+            input_data[feature] = st.number_input(label, value=0.0)
+
+    if st.button("Predict" ):
+        try:
+            df_manual = pd.DataFrame([input_data])
+            # Encode interpret text to numeric
+            for col in df_manual.columns:
+                if df_manual[col].dtype == object:
+                    df_manual[col] = df_manual[col].str.strip().str.lower()
+                    mapping = {"high": 0, "low": 1, "normal": 2}
+                    df_manual[col] = df_manual[col].map(mapping)
+            df_manual = df_manual.fillna(-999)
+
+            result = model.predict(df_manual[feature_names])[0]
+            if result == 1:
+                st.success("Prediction: Survived (1)")
+            else:
+                st.error("Prediction: Died (0)")
+        except Exception as e:
+            st.error(f"Prediction failed: {e}")
