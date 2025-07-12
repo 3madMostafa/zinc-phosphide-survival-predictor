@@ -210,15 +210,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Load the pretrained Random Forest model
+# Load the pretrained Random Forest model (Top 10 features)
 @st.cache_resource
 def load_model():
     try:
-        with open("model.pkl", "rb") as f:
+        with open("model_top10.pkl", "rb") as f:
             model = pickle.load(f)
         return model
     except FileNotFoundError:
-        st.error("⚠️ Model file 'model.pkl' not found. Please ensure the model file is in the same directory.")
+        st.error("⚠️ Model file 'model_top10.pkl' not found. Please ensure the model file is in the same directory.")
         st.stop()
 
 model = load_model()
@@ -228,6 +228,9 @@ if 'manual_prediction_result' not in st.session_state:
     st.session_state.manual_prediction_result = None
 if 'manual_prediction_data' not in st.session_state:
     st.session_state.manual_prediction_data = None
+
+# Get the top 10 features from the model
+feature_names = list(model.feature_names_in_)
 
 # Sidebar with information and settings
 with st.sidebar:
@@ -243,11 +246,10 @@ with st.sidebar:
     """)
     
     st.markdown("### 🔍 Model Information")
-    feature_names = list(model.feature_names_in_)
-    st.markdown(f"**Features:** {len(feature_names)}")
+    st.markdown(f"**Features:** {len(feature_names)} (Top 10 Most Important)")
     st.markdown(f"**Model Type:** Random Forest")
     
-    with st.expander("View Feature List"):
+    with st.expander("View Top 10 Features"):
         for i, feature in enumerate(feature_names, 1):
             st.write(f"{i}. {feature}")
     
@@ -259,7 +261,7 @@ with st.sidebar:
 st.markdown("""
 <div class="main-header">
     <h1>🏥 MedPredict</h1>
-    <p>Advanced Survival Prediction System</p>
+    <p>Advanced Survival Prediction System (Top 10 Features)</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -271,8 +273,16 @@ with tab1:
     <div class="input-section">
         <h3>📁 Upload Your Data File</h3>
         <p>Upload an Excel (.xlsx) or CSV file containing patient data for batch prediction.</p>
+        <p><strong>Note:</strong> Your file must contain the following 10 features (exact column names required):</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Display required features
+    st.markdown("**Required Features:**")
+    cols = st.columns(2)
+    for i, feature in enumerate(feature_names):
+        col = cols[i % 2]
+        col.write(f"• {feature}")
     
     col1, col2 = st.columns([2, 1])
     
@@ -281,7 +291,7 @@ with tab1:
             "Choose a file",
             type=["xlsx", "csv"],
             accept_multiple_files=False,
-            help="Upload a CSV or Excel file with the required features"
+            help="Upload a CSV or Excel file with the required top 10 features"
         )
     
     with col2:
@@ -297,78 +307,87 @@ with tab1:
             else:
                 df = pd.read_excel(uploaded_file)
             
-            st.markdown("### 📊 Data Preview")
-            st.dataframe(df, use_container_width=True, height=300)
-            
-            # Show data statistics
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total Records", len(df))
-            with col2:
-                st.metric("Features", len(df.columns))
-            with col3:
-                missing_data = df.isnull().sum().sum()
-                st.metric("Missing Values", missing_data)
-            
-            # Prediction button
-            if st.button("🔮 Run Batch Prediction", key="batch_predict", use_container_width=True):
-                with st.spinner("🔄 Processing predictions..."):
-                    try:
-                        # Simulate processing time for better UX
-                        time.sleep(1)
-                        
-                        df_proc = df.copy()
-                        # Map interpret strings
-                        for col in df_proc.columns:
-                            if df_proc[col].dtype == object:
-                                vals = df_proc[col].astype(str).str.lower().str.strip()
-                                if set(vals.dropna().unique()) <= {"low", "normal", "high"}:
-                                    df_proc[col] = vals.map({"high": 0, "low": 1, "normal": 2})
-                        
-                        df_proc = df_proc.fillna(-999)
-                        preds = model.predict(df_proc[feature_names])
-                        
-                        if show_confidence:
-                            confidence = model.predict_proba(df_proc[feature_names]).max(axis=1)
-                            df["Confidence"] = confidence
-                        
-                        df["Prediction"] = preds
-                        df["Survival_Status"] = df["Prediction"].map({1: "Survived", 0: "Died"})
-                        
-                        st.markdown("### 🎯 Prediction Results")
-                        
-                        # Summary metrics
-                        survived_count = (preds == 1).sum()
-                        died_count = (preds == 0).sum()
-                        
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("✅ Survived", survived_count)
-                        with col2:
-                            st.metric("❌ Died", died_count)
-                        with col3:
-                            survival_rate = (survived_count / len(preds)) * 100
-                            st.metric("Survival Rate", f"{survival_rate:.1f}%")
-                        
-                        # Results table
-                        st.dataframe(df, use_container_width=True, height=400)
-                        
-                        # Download option
-                        csv = df.to_csv(index=False).encode("utf-8")
-                        st.download_button(
-                            label="📥 Download Predictions as CSV",
-                            data=csv,
-                            file_name="survival_predictions.csv",
-                            mime="text/csv",
-                            use_container_width=True
-                        )
-                        
-                        if auto_download:
-                            st.success("✅ Predictions completed successfully!")
-                        
-                    except Exception as e:
-                        st.error(f"❌ Batch prediction failed: {str(e)}")
-                        st.info("💡 Please ensure your data contains all required features and is properly formatted.")
+            # Validate that all required features are present
+            missing_features = set(feature_names) - set(df.columns)
+            if missing_features:
+                st.error(f"❌ Missing required features: {', '.join(missing_features)}")
+                st.info("💡 Please ensure your data contains all 10 required features with exact column names.")
+            else:
+                # Filter to only the required features
+                df_filtered = df[feature_names].copy()
+                
+                st.markdown("### 📊 Data Preview (Top 10 Features Only)")
+                st.dataframe(df_filtered, use_container_width=True, height=300)
+                
+                # Show data statistics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Records", len(df_filtered))
+                with col2:
+                    st.metric("Features", len(df_filtered.columns))
+                with col3:
+                    missing_data = df_filtered.isnull().sum().sum()
+                    st.metric("Missing Values", missing_data)
+                
+                # Prediction button
+                if st.button("🔮 Run Batch Prediction", key="batch_predict", use_container_width=True):
+                    with st.spinner("🔄 Processing predictions..."):
+                        try:
+                            # Simulate processing time for better UX
+                            time.sleep(1)
+                            
+                            df_proc = df_filtered.copy()
+                            # Map interpret strings
+                            for col in df_proc.columns:
+                                if df_proc[col].dtype == object:
+                                    vals = df_proc[col].astype(str).str.lower().str.strip()
+                                    if set(vals.dropna().unique()) <= {"low", "normal", "high"}:
+                                        df_proc[col] = vals.map({"high": 0, "low": 1, "normal": 2})
+                            
+                            df_proc = df_proc.fillna(-999)
+                            preds = model.predict(df_proc)
+                            
+                            if show_confidence:
+                                confidence = model.predict_proba(df_proc).max(axis=1)
+                                df_filtered["Confidence"] = confidence
+                            
+                            df_filtered["Prediction"] = preds
+                            df_filtered["Survival_Status"] = df_filtered["Prediction"].map({1: "Survived", 0: "Died"})
+                            
+                            st.markdown("### 🎯 Prediction Results")
+                            
+                            # Summary metrics
+                            survived_count = (preds == 1).sum()
+                            died_count = (preds == 0).sum()
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("✅ Survived", survived_count)
+                            with col2:
+                                st.metric("❌ Died", died_count)
+                            with col3:
+                                survival_rate = (survived_count / len(preds)) * 100
+                                st.metric("Survival Rate", f"{survival_rate:.1f}%")
+                            
+                            # Results table
+                            st.dataframe(df_filtered, use_container_width=True, height=400)
+                            
+                            # Download option
+                            csv = df_filtered.to_csv(index=False).encode("utf-8")
+                            st.download_button(
+                                label="📥 Download Predictions as CSV",
+                                data=csv,
+                                file_name="survival_predictions_top10.csv",
+                                mime="text/csv",
+                                use_container_width=True
+                            )
+                            
+                            if auto_download:
+                                st.success("✅ Predictions completed successfully!")
+                            
+                        except Exception as e:
+                            st.error(f"❌ Batch prediction failed: {str(e)}")
+                            st.info("💡 Please ensure your data contains all required features and is properly formatted.")
         
         except Exception as e:
             st.error(f"❌ Error reading file: {str(e)}")
@@ -377,20 +396,20 @@ with tab2:
     st.markdown("""
     <div class="input-section">
         <h3>✏️ Manual Data Entry</h3>
-        <p>Enter patient data manually for individual prediction.</p>
+        <p>Enter patient data manually for individual prediction using the top 10 most important features.</p>
     </div>
     """, unsafe_allow_html=True)
     
     with st.form(key="manual_form", clear_on_submit=False):
-        st.markdown("#### 📝 Patient Information")
+        st.markdown("#### 📝 Patient Information (Top 10 Features)")
         
         # Create a more organized layout
-        cols = st.columns(3)
+        cols = st.columns(2)  # Use 2 columns for better layout with 10 features
         input_data = {}
         
         # Distribute features across columns for better layout
         for i, feature in enumerate(feature_names):
-            col = cols[i % 3]
+            col = cols[i % 2]
             
             # Determine widget type based on feature name
             if "(1=" in feature or "interpret" in feature.lower():
@@ -444,10 +463,10 @@ with tab2:
                             )
                     
                     df_manual = df_manual.fillna(-999)
-                    result = model.predict(df_manual[feature_names])[0]
+                    result = model.predict(df_manual)[0]
                     
                     if show_confidence:
-                        confidence = model.predict_proba(df_manual[feature_names]).max(axis=1)[0]
+                        confidence = model.predict_proba(df_manual).max(axis=1)[0]
                         confidence_text = f" (Confidence: {confidence:.1%})"
                     else:
                         confidence_text = ""
@@ -513,7 +532,7 @@ with tab2:
             st.download_button(
                 label="📥 Download This Prediction",
                 data=csv_single,
-                file_name="single_prediction.csv",
+                file_name="single_prediction_top10.csv",
                 mime="text/csv",
                 key="download_single_prediction"
             )
@@ -527,7 +546,7 @@ with tab2:
 # Footer
 st.markdown("""
 <div class="footer">
-    <p>🏥 <strong>MedPredict</strong> - Advanced Medical Prediction System</p>
+    <p>🏥 <strong>MedPredict</strong> - Advanced Medical Prediction System (Top 10 Features)</p>
     <p>Built with ❤️ using Streamlit | For educational and research purposes</p>
     <p><em>Always consult with healthcare professionals for medical decisions</em></p>
 </div>
