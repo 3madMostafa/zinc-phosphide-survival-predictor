@@ -214,11 +214,11 @@ st.markdown("""
 @st.cache_resource
 def load_model():
     try:
-        with open("model_top10.pkl", "rb") as f:
+        with open("model_guaranteed_top10.pkl", "rb") as f:
             model = pickle.load(f)
         return model
     except FileNotFoundError:
-        st.error("⚠️ Model file 'model_top10.pkl' not found. Please ensure the model file is in the same directory.")
+        st.error("⚠️ Model file 'model_guaranteed_top10.pkl' not found. Please ensure the model file is in the same directory.")
         st.stop()
 
 model = load_model()
