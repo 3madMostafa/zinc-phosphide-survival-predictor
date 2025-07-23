@@ -2,3 +2,6 @@ streamlit
 scikit-learn
 pandas
 openpyxl
+time
+pickle
+numpy
