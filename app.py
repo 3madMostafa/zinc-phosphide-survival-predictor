@@ -306,8 +306,8 @@ with st.sidebar:
     **Predictions:**
     - ❤️ Survival Status
     - 🏥 Hospital Stay Duration  
-    - 🫁 Ventilation Duration
-    - 🚨 ICU Stay Duration
+    - 🫁 Ventilation Requirement
+    - 🚨 ICU Stay Requirement
     - 💉 Vasopressor Requirement
     """)
     
